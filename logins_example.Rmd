@@ -1,0 +1,74 @@
+---
+title: "R Notebook"
+output: html_notebook
+params:
+  seed: 32
+  date_start: '2019-01-01'
+  date_end: '2019-02-28'
+---
+
+```{r libraries and params, message=FALSE, warning=FALSE}
+library(leaflet)
+library(IPtoCountry)
+library(dplyr)
+library(lubridate)
+nr_seed <- params$seed
+date_start <- params$date_start
+date_end <- params$date_end
+```
+
+```{r generate IPs, message=FALSE, warning=FALSE, include=FALSE}
+
+set.seed(nr_seed)
+vec_ip <- IPtoCountry::IP_generator(n = 20)
+loc_ip <- IPtoCountry::IP_location(vec_ip) %>% 
+  mutate(longitude = as.numeric(as.character(long)),
+         latitude = as.numeric(as.character(lat)))
+```
+
+```{r select on IP as the base, echo=FALSE, message=FALSE, warning=FALSE}
+loc_ip %>% 
+  mutate(ip = vec_ip) %>% 
+  filter(abrv != "-") -> d_ip_nonmissing
+d_ip_nonmissing %>% 
+  sample_n(size = 1) %>% 
+  select(ip) %>% 
+  unlist(use.names = F) -> ip_base
+
+vec_ip_nonmiss <- unique(d_ip_nonmissing$ip)
+```
+
+```{r random dataset of times, message=FALSE, warning=FALSE, include=FALSE}
+first <- as.POSIXct(date_start)
+last <- as.POSIXct(date_end)
+dt <- difftime(last, first, units = "sec")
+
+nSamples <- 100
+times_random <- first + runif(nSamples, min = 0, max = dt)
+```
+
+```{r allocate IPs to random times}
+set.seed(nr_seed)
+vec_ip_random <- c(rep(ip_base, 80), sample(vec_ip_nonmiss, 20, replace = T))
+
+dat_ready <- data_frame(ip = vec_ip_random,
+                        time_login = times_random) %>% 
+  arrange(time_login) %>% 
+  left_join(d_ip_nonmissing, by = "ip") %>% 
+  mutate(lab_map = paste0(country, ", ", region, ", ", city),
+         timediff = (time_login - dplyr::lag(time_login, n = 1)) / 3600,
+         color = ifelse(is.na(timediff), "blue",
+                        ifelse(timediff < 5 & (ip != dplyr::lag(ip, n = 1) | ip != dplyr::lead(ip, n = 1)), "red", "blue")))
+```
+
+```{r plot points on map}
+leaflet(dat_ready) %>% 
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, radius = 6, color = ~color, label = ~lab_map)
+```
+
+
+
+
+
+
